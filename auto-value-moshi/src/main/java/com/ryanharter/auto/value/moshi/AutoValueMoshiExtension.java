@@ -232,6 +232,13 @@ public final class AutoValueMoshiExtension extends AutoValueExtension {
 
     for (Property property : properties) {
       TypeName type = property.type.isPrimitive() ? property.type.box() : property.type;
+      if (type instanceof ParameterizedTypeName) {
+        ParameterizedTypeName p = (ParameterizedTypeName) type;
+        if (p.rawType.toString().endsWith("Optional")) {
+          type = p.typeArguments.get(0);
+        }
+      }
+
       ParameterizedTypeName adp = ParameterizedTypeName.get(ADAPTER_CLASS_NAME, type);
       fields.put(property,
           FieldSpec.builder(adp, property.humanName + "Adapter", PRIVATE, FINAL).build());
@@ -656,6 +663,23 @@ public final class AutoValueMoshiExtension extends AutoValueExtension {
     block.addStatement("$N = this.$N.fromJson($N)", field, adapter, reader);
   }
 
+  private static boolean doesSetterSpecMatchProperty(MethodSpec setterSpec, Property property) {
+    TypeName setterType = setterSpec.parameters.get(0).type;
+    TypeName propertyType = property.type;
+    if (setterType.equals(propertyType)) {
+      return true;
+    }
+    if (propertyType instanceof ParameterizedTypeName) {
+      ParameterizedTypeName p = (ParameterizedTypeName) propertyType;
+      if (p.rawType.toString().endsWith("Optional")) {
+        if (p.typeArguments.get(0).equals(setterType)) {
+          return true;
+        }
+      }
+    }
+
+    return false;
+  }
   private static void addBuilderFieldSetting(CodeBlock.Builder block,
                                              Property prop,
                                              FieldSpec adapter,
@@ -668,7 +692,7 @@ public final class AutoValueMoshiExtension extends AutoValueExtension {
     // If setter param type matches field type
     Optional<MethodSpec> setter = setterMethodSpecs
             // Find setter with param type equal to field type.
-            .filter(methodSpec -> methodSpec.parameters.get(0).type.equals(prop.type))
+            .filter(methodSpec -> doesSetterSpecMatchProperty(methodSpec, prop))
             .findFirst();
 
     if (setter.isPresent()) {
